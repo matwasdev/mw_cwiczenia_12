@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using mw_cwiczenia_12.DTOs;
+using mw_cwiczenia_12.Exceptions;
 using mw_cwiczenia_12.Service;
 
 namespace mw_cwiczenia_12.Controllers;
@@ -27,7 +29,35 @@ public class TripsController : ControllerBase
         catch (Exception e)
         {
             Console.WriteLine(e);
-            throw;
+            return StatusCode(500, "Internal server error occured");
+        }
+    }
+
+    [HttpPost]
+    [Route("{idTrip}/clients")]
+    public async Task<IActionResult> RegisterClientForTripAsync(int idTrip, RegisterClientForTripDto request)
+    {
+        try
+        {
+            await _dbService.RegisterClientForTripAsync(idTrip, request);
+            return Created();
+        }
+        catch (NotFoundException e)
+        {
+            return NotFound(e.Message);
+        }
+        catch (BadRequestException e)
+        {
+            return BadRequest(e.Message);
+        }
+        catch (ConflictException e)
+        {
+            return Conflict(e.Message);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            return StatusCode(500, "Internal server error occured");
         }
     }
     
