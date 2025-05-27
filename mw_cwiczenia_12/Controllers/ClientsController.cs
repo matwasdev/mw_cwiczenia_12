@@ -17,7 +17,7 @@ public class ClientsController : ControllerBase
 
 
     [HttpDelete]
-    [Route("{id}")]
+    [Route("{idClient}")]
     public async Task<IActionResult> RemoveClient(int idClient)
     {
         try
@@ -29,9 +29,9 @@ public class ClientsController : ControllerBase
         {
             return NotFound(e.Message);
         }
-        catch (BadRequestException e)
+        catch (ConflictException e)
         {
-            return BadRequest(e.Message);
+            return Conflict(e.Message);
         }
         catch (Exception e)
         {

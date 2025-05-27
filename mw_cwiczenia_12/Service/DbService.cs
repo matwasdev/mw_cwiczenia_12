@@ -60,8 +60,8 @@ public class DbService : IDbService
             throw new NotFoundException($"Client with id {idClient} not found");
         
         bool hasAnyTrip = await _context.ClientTrips.AnyAsync(ct => ct.IdClient==idClient);
-        if(!hasAnyTrip)
-            throw new BadRequestException($"Client with id {idClient} has trips, cannot be removed.");
+        if(hasAnyTrip)
+            throw new ConflictException($"Client with id {idClient} has trips, cannot be removed.");
 
         _context.Clients.Remove(client);
         await _context.SaveChangesAsync();
@@ -69,31 +69,71 @@ public class DbService : IDbService
 
     public async Task RegisterClientForTripAsync(int idTrip, RegisterClientForTripDto request)
     {
-        
-        var client = await _context.Clients.FirstOrDefaultAsync(c => c.Pesel == request.Pesel);
-
-        var isAlreadyRegistered = await _context.ClientTrips.AnyAsync(ct => ct.IdClient == client.IdClient);
-        if (isAlreadyRegistered)
-            throw new ConflictException($"Client with id {client.IdClient} is already registered for trip {idTrip}");
-
-        var trip = await _context.Trips.FirstOrDefaultAsync(t => t.IdTrip == idTrip);
-        if(trip==null)
-            throw new NotFoundException($"Trip with id {idTrip} not found");
-        
-        if(trip.DateFrom < DateTime.Now)
-            throw new BadRequestException($"Trip with id {idTrip} is in the past, cannot register");
-
-        ClientTrip clientTrip = new ClientTrip
+        using (var transaction = await _context.Database.BeginTransactionAsync())
         {
-            IdClient = client.IdClient,
-            IdTrip = trip.IdTrip,
-            RegisteredAt = DateTime.Now,
-            PaymentDate = request.PaymentDate,
-        };
-        
-        _context.ClientTrips.Add(clientTrip);
-        await _context.SaveChangesAsync();
+            try
+            {
+                //1
+                var client = await _context.Clients.FirstOrDefaultAsync(c => c.Pesel == request.Pesel);
+                if(client!=null)
+                    throw new ConflictException($"Client with id this pesel already exists");
+                else
+                {
+                    client = new Client
+                    {
+                        FirstName = request.FirstName,
+                        LastName = request.LastName,
+                        Email = request.Email,
+                        Telephone = request.Telephone,
+                        Pesel = request.Pesel
+                    };
+                    
+                    _context.Clients.Add(client);
+                    await _context.SaveChangesAsync();
+                }
+                
+                //2 
+                
+                var registeredClient = await _context.Clients.FirstOrDefaultAsync(c => c.Pesel == request.Pesel);
+                if(registeredClient==null)
+                    throw new NotFoundException($"Client with this pesel not found");
+                
+                var isAlreadyRegistered = await _context.ClientTrips.AnyAsync(ct => ct.IdClient == registeredClient.IdClient && ct.IdTrip == idTrip);
+                if (isAlreadyRegistered)
+                    throw new ConflictException(
+                        $"Client with id {registeredClient.IdClient} is already registered for trip {idTrip}");
+
+                
+                
+                var trip = await _context.Trips.FirstOrDefaultAsync(t => t.IdTrip == idTrip);
+                if (trip == null)
+                    throw new NotFoundException($"Trip with id {idTrip} not found");
+
+                if (trip.DateFrom < DateTime.Now)
+                    throw new BadRequestException($"Trip with id {idTrip} is in the past, cannot register");
+
+                
+                
+                ClientTrip clientTrip = new ClientTrip
+                {
+                    IdClient = registeredClient.IdClient,
+                    IdTrip = trip.IdTrip,
+                    RegisteredAt = DateTime.Now,
+                    PaymentDate = request.PaymentDate,
+                };
+
+                _context.ClientTrips.Add(clientTrip);
+                await _context.SaveChangesAsync();
+
+                
+                await transaction.CommitAsync();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
     }
-    
-    
 }
